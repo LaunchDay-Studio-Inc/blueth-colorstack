@@ -1,0 +1,20 @@
+{
+  "name": "neon-dash-runner",
+  "version": "1.0.0",
+  "description": "A cyberpunk neon endless runner built with Phaser 3",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["phaser", "game", "endless-runner", "cyberpunk"],
+  "author": "LaunchDay Studio Inc",
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.2"
+  }
+}
