@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0a1a" />
+  <meta name="description" content="NEON DASH — A cyberpunk endless runner. Dodge spikes, leap gaps, collect data orbs, and push your speed to the limit in this neon-soaked dystopian cityscape." />
+  <meta name="author" content="LaunchDay Studio" />
+
+  <!-- Open Graph / Social Sharing -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="NEON DASH — Cyberpunk Endless Runner" />
+  <meta property="og:description" content="Dodge spikes, leap gaps, collect data orbs in this neon-soaked cyberpunk runner. How far can you dash?" />
+  <meta property="og:image" content="./og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="NEON DASH" />
+  <meta name="twitter:description" content="Cyberpunk endless runner — tap to jump, dodge to survive." />
+
+  <!-- Favicon (inline SVG data URI — no external file needed) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230a0a1a'/><text x='4' y='24' font-family='monospace' font-size='22' font-weight='bold' fill='%2300f0ff'>N</text><rect x='2' y='28' width='28' height='2' fill='%23ff2d95'/></svg>" />
+
   <title>NEON DASH</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -18,6 +35,13 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
+    #game-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
     canvas {
       display: block;
       max-width: 100vw;
@@ -27,6 +51,7 @@
   </style>
 </head>
 <body>
+  <div id="game-container"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
