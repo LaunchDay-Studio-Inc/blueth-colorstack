@@ -235,7 +235,12 @@ export class GameOverScene extends Phaser.Scene {
       'TIP: Collect data orbs for bonus points',
       'TIP: Shield absorbs one hit',
       'TIP: Combos multiply your score',
-      'TIP: Speed increases over time'
+      'TIP: Speed increases over time',
+      'TIP: Dodge close to spikes for near-miss bonus',
+      'TIP: Watch for laser barriers at high speed',
+      'TIP: Press M to toggle sound',
+      'TIP: Jump early over double gaps',
+      'TIP: Data orbs above spikes are worth the risk'
     ];
     const tip = tips[Math.floor(Math.random() * tips.length)];
     this.add.text(width / 2, height - 30, tip, {

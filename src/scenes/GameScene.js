@@ -63,6 +63,13 @@ export class GameScene extends Phaser.Scene {
       scanlines.fillRect(0, y, width, 2);
     }
 
+    // Speed vignette overlay (darkens edges at high speed)
+    this.vignetteGfx = this.add.graphics().setScrollFactor(0).setDepth(89);
+    this.vignetteGfx.setAlpha(0);
+
+    // Speed lines container
+    this.speedLines = this.add.graphics().setScrollFactor(0).setDepth(88);
+
     // Groups
     this.groundGroup = this.physics.add.staticGroup();
     this.spikeGroup = this.physics.add.group({ allowGravity: false });
@@ -710,6 +717,46 @@ export class GameScene extends Phaser.Scene {
     this.bg1.tilePositionX += 0.3 * speedRatio;
     this.bg2.tilePositionX += 0.7 * speedRatio;
     this.bg3.tilePositionX += 1.2 * speedRatio;
+
+    // Speed-reactive effects
+    const speedFactor = Math.min((this.gameSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 1);
+
+    // Vignette intensifies at high speed
+    this.vignetteGfx.clear();
+    if (speedFactor > 0.3) {
+      const vigAlpha = (speedFactor - 0.3) * 0.3;
+      this.vignetteGfx.setAlpha(vigAlpha);
+      const { width: vw, height: vh } = this.cameras.main;
+      // Left edge
+      this.vignetteGfx.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.6, 0.6, 0, 0);
+      this.vignetteGfx.fillRect(0, 0, 60, vh);
+      // Right edge
+      this.vignetteGfx.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.6, 0.6);
+      this.vignetteGfx.fillRect(vw - 60, 0, 60, vh);
+      // Top edge
+      this.vignetteGfx.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.4, 0.4, 0, 0);
+      this.vignetteGfx.fillRect(0, 0, vw, 40);
+    }
+
+    // Horizontal speed lines at very high speed
+    this.speedLines.clear();
+    if (speedFactor > 0.5) {
+      const lineAlpha = (speedFactor - 0.5) * 0.2;
+      this.speedLines.lineStyle(1, COLORS.neonCyan, lineAlpha);
+      const numLines = Math.floor(speedFactor * 6);
+      for (let i = 0; i < numLines; i++) {
+        const ly = 80 + Math.random() * 400;
+        const lx = Math.random() * 200;
+        const ll = 40 + Math.random() * 80;
+        this.speedLines.lineBetween(lx, ly, lx + ll, ly);
+      }
+    }
+
+    // Trail emitter reacts to speed
+    if (this.trailEmitter && this.trailEmitter.active) {
+      this.trailEmitter.setFrequency(Math.max(15, 50 - speedFactor * 35));
+      this.trailEmitter.setLifespan(300 + speedFactor * 200);
+    }
 
     // Move all world objects left
     const moveAmount = this.gameSpeed * dt;
