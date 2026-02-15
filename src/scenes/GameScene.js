@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
 import { COLORS } from '../utils/AssetGenerator.js';
+import {
+  initAudio, playJump, playDoubleJump, playCoin, playCoinCombo,
+  playShieldPickup, playShieldBreak, playDeath, playMilestone, playLand,
+  toggleMute, isMuted
+} from '../utils/AudioManager.js';
 
 const GROUND_Y = 520;
 const GROUND_HEIGHT = 80;
@@ -35,10 +40,16 @@ export class GameScene extends Phaser.Scene {
     this.screenShaking = false;
     this.coinCount = 0;
     this.speedMilestone = 0;
+    this.nearMissStreak = 0;
+    this.wasInAir = false;
+    this.justLanded = false;
   }
 
   create() {
     const { width, height } = this.cameras.main;
+
+    // Initialize audio on first user interaction
+    initAudio();
 
     // Parallax backgrounds
     this.bg1 = this.add.tileSprite(0, 0, width, height, 'bg_layer1').setOrigin(0, 0).setScrollFactor(0);
@@ -55,9 +66,10 @@ export class GameScene extends Phaser.Scene {
     // Groups
     this.groundGroup = this.physics.add.staticGroup();
     this.spikeGroup = this.physics.add.group({ allowGravity: false });
+    this.laserGroup = this.physics.add.group({ allowGravity: false });
     this.coinGroup = this.physics.add.group({ allowGravity: false });
     this.shieldGroup = this.physics.add.group({ allowGravity: false });
-    this.decorGroup = this.add.group();
+    this.movingPlatGroup = this.physics.add.staticGroup();
 
     // Generate initial ground
     this.generateInitialGround();
@@ -89,7 +101,9 @@ export class GameScene extends Phaser.Scene {
 
     // Collisions
     this.physics.add.collider(this.player, this.groundGroup, this.onLand, null, this);
+    this.physics.add.collider(this.player, this.movingPlatGroup, this.onLand, null, this);
     this.physics.add.overlap(this.player, this.spikeGroup, this.onHitSpike, null, this);
+    this.physics.add.overlap(this.player, this.laserGroup, this.onHitSpike, null, this);
     this.physics.add.overlap(this.player, this.coinGroup, this.onCollectCoin, null, this);
     this.physics.add.overlap(this.player, this.shieldGroup, this.onCollectShield, null, this);
 
@@ -145,6 +159,16 @@ export class GameScene extends Phaser.Scene {
       color: '#ffe600'
     }).setScrollFactor(0).setDepth(100);
 
+    // UI - Near miss text
+    this.nearMissText = this.add.text(width / 2, height / 2 - 30, '', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#39ff14',
+      stroke: '#39ff14',
+      strokeThickness: 1
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setAlpha(0);
+
     // Speed milestone flash text
     this.milestoneText = this.add.text(width / 2, height / 2 - 60, '', {
       fontFamily: 'monospace',
@@ -155,10 +179,26 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 2
     }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setAlpha(0);
 
+    // Mute button (top-right corner)
+    this.muteBtn = this.add.text(width - 20, height - 20, isMuted() ? 'MUTE' : 'SND', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: '#444466',
+      backgroundColor: '#0a0a1a',
+      padding: { x: 4, y: 2 }
+    }).setOrigin(1, 1).setScrollFactor(0).setDepth(101).setInteractive({ useHandCursor: true });
+
+    this.muteBtn.on('pointerdown', (pointer) => {
+      pointer.event.stopPropagation();
+      const nowMuted = toggleMute();
+      this.muteBtn.setText(nowMuted ? 'MUTE' : 'SND');
+    });
+
     // Input
     this.input.on('pointerdown', () => this.jump());
     this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+    this.mKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
     // Camera
     this.cameras.main.fadeIn(300, 10, 10, 26);
@@ -173,15 +213,16 @@ export class GameScene extends Phaser.Scene {
       { speed: 380, text: 'LUDICROUS!' },
       { speed: 410, text: 'MAX OVERLOAD!' }
     ];
+
+    // Laser graphics array for animated beams
+    this.laserBeams = [];
   }
 
   generateInitialGround() {
-    // Fill screen with ground initially
     for (let x = 0; x < 500; x += 64) {
       this.createGroundTile(x, GROUND_Y);
     }
     this.lastSpawnX = 500;
-    // Queue first set of obstacles
     this.scheduleNextSegment();
   }
 
@@ -194,18 +235,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   scheduleNextSegment() {
-    // Determine next segment: ground with possible spike, or a gap
     const roll = Math.random();
     const speedFactor = Math.min((this.gameSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 1);
 
-    if (roll < 0.35 + speedFactor * 0.1) {
-      // Gap
+    if (roll < 0.28 + speedFactor * 0.08) {
       this.createGap();
-    } else if (roll < 0.65 + speedFactor * 0.1) {
-      // Ground with spikes
+    } else if (roll < 0.50 + speedFactor * 0.08) {
       this.createSpikeSegment();
+    } else if (roll < 0.62 + speedFactor * 0.06 && speedFactor > 0.15) {
+      this.createLaserSegment();
+    } else if (roll < 0.72 + speedFactor * 0.05 && speedFactor > 0.25) {
+      this.createDoubleGapSegment();
     } else {
-      // Plain ground with possible collectibles
       this.createPlainSegment();
     }
   }
@@ -214,22 +255,18 @@ export class GameScene extends Phaser.Scene {
     const speedFactor = Math.min((this.gameSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 1);
     const gapWidth = GAP_MIN_WIDTH + Math.random() * (GAP_MAX_WIDTH - GAP_MIN_WIDTH) * (0.6 + speedFactor * 0.4);
 
-    // Platform before gap should already exist, so just leave a gap
     this.lastSpawnX += gapWidth;
 
-    // Place coins above the gap as reward for jumping over
     if (Math.random() > 0.3) {
       const coinX = this.lastSpawnX - gapWidth / 2;
       this.spawnCoin(coinX, GROUND_Y - 80);
     }
 
-    // Continue ground after gap
     const segWidth = MIN_SEGMENT_WIDTH + Math.random() * (MAX_SEGMENT_WIDTH - MIN_SEGMENT_WIDTH);
     for (let x = this.lastSpawnX; x < this.lastSpawnX + segWidth; x += 64) {
       this.createGroundTile(x, GROUND_Y);
     }
 
-    // Maybe spawn shield pickup rarely
     if (Math.random() < 0.08 && !this.hasShield) {
       this.spawnShield(this.lastSpawnX + segWidth / 2, GROUND_Y - 60);
     }
@@ -237,15 +274,43 @@ export class GameScene extends Phaser.Scene {
     this.lastSpawnX += segWidth;
   }
 
+  createDoubleGapSegment() {
+    // Two gaps with a small landing platform between them
+    const speedFactor = Math.min((this.gameSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 1);
+
+    // First gap
+    const gap1Width = GAP_MIN_WIDTH + Math.random() * 20;
+    this.lastSpawnX += gap1Width;
+
+    // Small landing platform
+    const platWidth = 64 + Math.random() * 32;
+    for (let x = this.lastSpawnX; x < this.lastSpawnX + platWidth; x += 64) {
+      this.createGroundTile(x, GROUND_Y);
+    }
+
+    // Coin reward in the middle
+    this.spawnCoin(this.lastSpawnX + platWidth / 2, GROUND_Y - 50);
+    this.lastSpawnX += platWidth;
+
+    // Second gap
+    const gap2Width = GAP_MIN_WIDTH + Math.random() * 30;
+    this.lastSpawnX += gap2Width;
+
+    // Continuation
+    const segWidth = MIN_SEGMENT_WIDTH + Math.random() * MAX_SEGMENT_WIDTH;
+    for (let x = this.lastSpawnX; x < this.lastSpawnX + segWidth; x += 64) {
+      this.createGroundTile(x, GROUND_Y);
+    }
+    this.lastSpawnX += segWidth;
+  }
+
   createSpikeSegment() {
-    // Ground segment with spikes on it
     const segWidth = MIN_SEGMENT_WIDTH + Math.random() * MAX_SEGMENT_WIDTH;
 
     for (let x = this.lastSpawnX; x < this.lastSpawnX + segWidth; x += 64) {
       this.createGroundTile(x, GROUND_Y);
     }
 
-    // Place 1-3 spikes
     const speedFactor = Math.min((this.gameSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 1);
     const spikeCount = 1 + Math.floor(Math.random() * (1 + speedFactor * 2));
     const spikeStartX = this.lastSpawnX + 40;
@@ -261,9 +326,48 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Coins above spikes as risk-reward
     if (Math.random() > 0.5) {
       this.spawnCoin(spikeStartX + (spikeCount * spikeSpacing) / 2, GROUND_Y - 70);
+    }
+
+    this.lastSpawnX += segWidth;
+  }
+
+  createLaserSegment() {
+    // Ground with a horizontal laser beam to duck under (jump timing)
+    const segWidth = MIN_SEGMENT_WIDTH + Math.random() * MAX_SEGMENT_WIDTH;
+
+    for (let x = this.lastSpawnX; x < this.lastSpawnX + segWidth; x += 64) {
+      this.createGroundTile(x, GROUND_Y);
+    }
+
+    // Laser beam - a horizontal danger zone at jump height
+    const laserX = this.lastSpawnX + 60;
+    const laserWidth = 40 + Math.random() * 30;
+
+    // Create physics body for laser
+    const laser = this.laserGroup.create(laserX + laserWidth / 2, GROUND_Y - 50, null);
+    laser.setVisible(false);
+    laser.body.setSize(laserWidth, 8);
+
+    // Visual laser beam
+    const beamGfx = this.add.graphics().setDepth(5);
+    beamGfx.fillStyle(COLORS.neonPink, 0.6);
+    beamGfx.fillRect(laserX, GROUND_Y - 54, laserWidth, 8);
+    beamGfx.lineStyle(1, COLORS.neonPink, 1);
+    beamGfx.strokeRect(laserX, GROUND_Y - 54, laserWidth, 8);
+
+    // Emitter posts
+    beamGfx.fillStyle(COLORS.neonPink, 0.8);
+    beamGfx.fillRect(laserX - 3, GROUND_Y - 60, 6, 60);
+    beamGfx.fillRect(laserX + laserWidth - 3, GROUND_Y - 60, 6, 60);
+
+    // Store reference for cleanup and animation
+    this.laserBeams.push({ gfx: beamGfx, x: laserX, width: laserWidth, body: laser });
+
+    // Coins as reward for jumping through
+    if (Math.random() > 0.4) {
+      this.spawnCoin(laserX + laserWidth / 2, GROUND_Y - 90);
     }
 
     this.lastSpawnX += segWidth;
@@ -276,7 +380,6 @@ export class GameScene extends Phaser.Scene {
       this.createGroundTile(x, GROUND_Y);
     }
 
-    // Scatter some coins
     const coinCount = 1 + Math.floor(Math.random() * 3);
     for (let i = 0; i < coinCount; i++) {
       const cx = this.lastSpawnX + 30 + Math.random() * (segWidth - 60);
@@ -284,7 +387,6 @@ export class GameScene extends Phaser.Scene {
       this.spawnCoin(cx, cy);
     }
 
-    // Rare shield
     if (Math.random() < 0.05 && !this.hasShield) {
       this.spawnShield(this.lastSpawnX + segWidth / 2, GROUND_Y - 70);
     }
@@ -296,7 +398,6 @@ export class GameScene extends Phaser.Scene {
     const coin = this.coinGroup.create(x, y, 'coin');
     coin.setOrigin(0.5);
 
-    // Bobbing animation
     this.tweens.add({
       targets: coin,
       y: y - 8,
@@ -330,15 +431,16 @@ export class GameScene extends Phaser.Scene {
       this.player.setVelocityY(JUMP_VELOCITY);
       this.player.setTexture('player_jump');
       this.spawnJumpParticles();
+      playJump();
     } else if (this.jumpsRemaining > 0) {
       this.jumpsRemaining--;
       this.player.setVelocityY(DOUBLE_JUMP_VELOCITY);
       this.spawnJumpParticles();
+      playDoubleJump();
     }
   }
 
   spawnJumpParticles() {
-    // Burst of particles at feet
     const particles = this.add.particles(this.player.x, this.player.y + 16, 'particle_cyan', {
       speed: { min: 40, max: 120 },
       angle: { min: 60, max: 120 },
@@ -355,20 +457,53 @@ export class GameScene extends Phaser.Scene {
   onLand(player, ground) {
     if (player.body.touching.down) {
       this.jumpsRemaining = this.maxJumps;
+      if (this.wasInAir) {
+        this.justLanded = true;
+        this.wasInAir = false;
+        playLand();
+      }
     }
   }
 
-  onHitSpike(player, spike) {
+  checkNearMiss() {
+    // Check proximity to spikes for "near miss" dopamine hit
+    let nearMiss = false;
+    this.spikeGroup.getChildren().forEach(spike => {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, spike.x, spike.y);
+      if (dist < 40 && dist > 15 && !this.player.body.touching.down) {
+        nearMiss = true;
+      }
+    });
+
+    if (nearMiss) {
+      this.nearMissStreak++;
+      const bonus = this.nearMissStreak * 3;
+      this.score += bonus;
+
+      this.nearMissText.setText(`NEAR MISS! +${bonus}`);
+      this.nearMissText.setAlpha(1);
+      this.tweens.add({
+        targets: this.nearMissText,
+        alpha: 0,
+        y: this.nearMissText.y - 15,
+        duration: 600,
+        onComplete: () => {
+          this.nearMissText.y = this.cameras.main.height / 2 - 30;
+        }
+      });
+    }
+  }
+
+  onHitSpike(player, obstacle) {
     if (!this.isAlive) return;
 
     if (this.hasShield) {
-      // Shield absorbs hit
       this.hasShield = false;
       this.shieldVisual.setVisible(false);
       this.shieldText.setText('');
-      spike.destroy();
+      obstacle.destroy();
+      playShieldBreak();
 
-      // Shield break effect
       const breakParticles = this.add.particles(player.x, player.y, 'particle_cyan', {
         speed: { min: 80, max: 200 },
         angle: { min: 0, max: 360 },
@@ -380,7 +515,6 @@ export class GameScene extends Phaser.Scene {
       });
       this.time.delayedCall(600, () => breakParticles.destroy());
 
-      // Brief invincibility flash
       this.tweens.add({
         targets: player,
         alpha: { from: 0.3, to: 1 },
@@ -398,11 +532,15 @@ export class GameScene extends Phaser.Scene {
     this.coinCount++;
     this.score += COIN_SCORE * this.comboMultiplier;
 
-    // Combo system
     this.comboMultiplier = Math.min(this.comboMultiplier + 0.5, 5);
-    this.comboTimer = 120; // frames
+    this.comboTimer = 120;
 
-    // Pop effect
+    if (this.comboMultiplier > 1.5) {
+      playCoinCombo(this.comboMultiplier);
+    } else {
+      playCoin();
+    }
+
     const popText = this.add.text(coin.x, coin.y, `+${COIN_SCORE * this.comboMultiplier | 0}`, {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -418,7 +556,6 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => popText.destroy()
     });
 
-    // Collect particles
     const collectParticles = this.add.particles(coin.x, coin.y, 'particle_spark', {
       speed: { min: 30, max: 80 },
       angle: { min: 0, max: 360 },
@@ -434,8 +571,8 @@ export class GameScene extends Phaser.Scene {
     shield.destroy();
     this.hasShield = true;
     this.shieldVisual.setVisible(true);
+    playShieldPickup();
 
-    // Pickup effect
     const fx = this.add.particles(shield.x, shield.y, 'particle_cyan', {
       speed: { min: 60, max: 150 },
       angle: { min: 0, max: 360 },
@@ -450,6 +587,7 @@ export class GameScene extends Phaser.Scene {
   die() {
     this.isAlive = false;
     this.trailEmitter.stop();
+    playDeath();
 
     // Death particles - big explosion
     const deathParticles = this.add.particles(this.player.x, this.player.y, 'particle', {
@@ -506,6 +644,7 @@ export class GameScene extends Phaser.Scene {
     this.milestoneText.setText(text);
     this.milestoneText.setAlpha(0);
     this.milestoneText.setScale(0.5);
+    playMilestone();
 
     this.tweens.add({
       targets: this.milestoneText,
@@ -522,6 +661,11 @@ export class GameScene extends Phaser.Scene {
     if (!this.isAlive) return;
 
     const dt = delta / 1000;
+
+    // Track air state for landing sound
+    if (!this.player.body.touching.down) {
+      this.wasInAir = true;
+    }
 
     // Increase speed over time
     if (this.gameSpeed < MAX_SPEED) {
@@ -567,13 +711,12 @@ export class GameScene extends Phaser.Scene {
     this.bg2.tilePositionX += 0.7 * speedRatio;
     this.bg3.tilePositionX += 1.2 * speedRatio;
 
-    // Move all world objects left (simulating player running right)
+    // Move all world objects left
     const moveAmount = this.gameSpeed * dt;
 
     this.groundGroup.getChildren().forEach(tile => {
       tile.x -= moveAmount;
       tile.body.x = tile.x;
-      // Clean up off-screen tiles
       if (tile.x < -128) {
         tile.destroy();
       }
@@ -582,6 +725,41 @@ export class GameScene extends Phaser.Scene {
     this.spikeGroup.getChildren().forEach(spike => {
       spike.x -= moveAmount;
       if (spike.x < -64) spike.destroy();
+    });
+
+    this.laserGroup.getChildren().forEach(laser => {
+      laser.x -= moveAmount;
+      laser.body.x = laser.x - laser.body.width / 2;
+      if (laser.x < -100) laser.destroy();
+    });
+
+    // Move and clean up laser beam graphics
+    for (let i = this.laserBeams.length - 1; i >= 0; i--) {
+      const beam = this.laserBeams[i];
+      beam.x -= moveAmount;
+
+      // Redraw at new position with animated flicker
+      beam.gfx.clear();
+      const flicker = 0.4 + Math.sin(time / 80) * 0.3;
+      beam.gfx.fillStyle(COLORS.neonPink, flicker);
+      beam.gfx.fillRect(beam.x, GROUND_Y - 54, beam.width, 8);
+      beam.gfx.lineStyle(1, COLORS.neonPink, flicker + 0.2);
+      beam.gfx.strokeRect(beam.x, GROUND_Y - 54, beam.width, 8);
+      // Posts
+      beam.gfx.fillStyle(COLORS.neonPink, 0.8);
+      beam.gfx.fillRect(beam.x - 3, GROUND_Y - 60, 6, 60);
+      beam.gfx.fillRect(beam.x + beam.width - 3, GROUND_Y - 60, 6, 60);
+
+      if (beam.x + beam.width < -50) {
+        beam.gfx.destroy();
+        this.laserBeams.splice(i, 1);
+      }
+    }
+
+    this.movingPlatGroup.getChildren().forEach(plat => {
+      plat.x -= moveAmount;
+      plat.body.x = plat.x;
+      if (plat.x < -100) plat.destroy();
     });
 
     this.coinGroup.getChildren().forEach(coin => {
@@ -617,6 +795,15 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.spaceKey) || Phaser.Input.Keyboard.JustDown(this.upKey)) {
       this.jump();
     }
+
+    // Mute toggle via M key
+    if (Phaser.Input.Keyboard.JustDown(this.mKey)) {
+      const nowMuted = toggleMute();
+      this.muteBtn.setText(nowMuted ? 'MUTE' : 'SND');
+    }
+
+    // Near miss detection
+    this.checkNearMiss();
 
     // Shield visual follows player
     if (this.hasShield) {

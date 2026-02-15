@@ -4,6 +4,10 @@ import { PreloadScene } from './scenes/PreloadScene.js';
 import { MenuScene } from './scenes/MenuScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
+import { pokiInit } from './utils/PokiSDK.js';
+
+// Initialize Poki SDK (no-op if not on Poki)
+pokiInit();
 
 const config = {
   type: Phaser.AUTO,

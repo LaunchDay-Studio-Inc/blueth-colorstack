@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS } from '../utils/AssetGenerator.js';
+import { playNewRecord, playUIClick } from '../utils/AudioManager.js';
+import { pokiGameplayStop, pokiCommercialBreak, pokiGameplayStart } from '../utils/PokiSDK.js';
 
 export class GameOverScene extends Phaser.Scene {
   constructor() {
@@ -12,6 +14,10 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create() {
+    // Notify Poki: gameplay stopped, show ad between runs
+    pokiGameplayStop();
+    pokiCommercialBreak();
+
     const { width, height } = this.cameras.main;
 
     // Background
@@ -122,6 +128,7 @@ export class GameOverScene extends Phaser.Scene {
     const highY = scoreY + 100;
 
     if (isNewHigh && this.finalScore > 0) {
+      playNewRecord();
       const newHighText = this.add.text(width / 2, highY, 'NEW RECORD!', {
         fontFamily: 'monospace',
         fontSize: '18px',
@@ -199,6 +206,8 @@ export class GameOverScene extends Phaser.Scene {
 
     // Input handling
     const restart = () => {
+      playUIClick();
+      pokiGameplayStart();
       this.cameras.main.fadeOut(300, 10, 10, 26);
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.scene.start('GameScene');
@@ -206,6 +215,7 @@ export class GameOverScene extends Phaser.Scene {
     };
 
     const goMenu = () => {
+      playUIClick();
       this.cameras.main.fadeOut(300, 10, 10, 26);
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.scene.start('MenuScene');

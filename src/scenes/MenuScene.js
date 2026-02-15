@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS } from '../utils/AssetGenerator.js';
+import { initAudio, playUIClick } from '../utils/AudioManager.js';
+import { pokiGameplayStart } from '../utils/PokiSDK.js';
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -168,6 +170,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   startGame() {
+    initAudio();
+    playUIClick();
+    pokiGameplayStart();
     this.cameras.main.fadeOut(300, 10, 10, 26);
     this.cameras.main.once('camerafadeoutcomplete', () => {
       this.scene.start('GameScene');
